@@ -6,13 +6,21 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.seed import SEED_ROWS
+from app.seed import SEED_AUX_ROWS, SEED_ROWS
 
 
 class Store:
     def __init__(self) -> None:
+        self.reset()
+
+    def reset(self) -> None:
+        """把内存数据恢复到示例初始状态，供本地联调与自动化测试复用。"""
         self._tables: dict[str, list[dict[str, Any]]] = {
             name: [dict(row) for row in rows] for name, rows in SEED_ROWS.items()
+        }
+        # 辅助表挂在数据源模块下，但不参与模块总数与运营概览的统计口径。
+        self._aux: dict[str, list[dict[str, Any]]] = {
+            name: [dict(row) for row in rows] for name, rows in SEED_AUX_ROWS.items()
         }
 
     def module_names(self) -> list[str]:
@@ -20,6 +28,15 @@ class Store:
 
     def rows(self, module: str) -> list[dict[str, Any]]:
         return self._tables.setdefault(module, [])
+
+    def aux_rows(self, name: str) -> list[dict[str, Any]]:
+        return self._aux.setdefault(name, [])
+
+    def aux_find(self, name: str, entry_id: int) -> dict[str, Any] | None:
+        for row in self.aux_rows(name):
+            if int(row.get("id", 0)) == entry_id:
+                return row
+        return None
 
     def find(self, module: str, entry_id: int) -> dict[str, Any] | None:
         for row in self.rows(module):

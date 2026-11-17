@@ -21,6 +21,22 @@ class ActionResult(BaseModel):
     entry: dict[str, Any] | None = None
 
 
+class WorklistResult(BaseModel):
+    """主备清单 / 失败核对清单 / 切换结果的统一返回。
+
+    state 为 ok 表示有数据；empty 表示筛选后暂无结果，message 说明空态原因；
+    failed 表示本次操作或读取失败，message 说明失败原因（重试中断也走这里）。
+    """
+
+    items: list[dict[str, Any]] = Field(default_factory=list)
+    total: int = 0
+    page: int = 1
+    size: int = 20
+    state: str = "ok"
+    message: str = ""
+    summary: dict[str, Any] = Field(default_factory=dict)
+
+
 class EntryPayload(BaseModel):
     """登记或修改一条业务记录时提交的字段集合。"""
 

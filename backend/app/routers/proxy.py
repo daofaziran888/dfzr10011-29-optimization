@@ -5,8 +5,9 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query
 
-from app.schemas import ActionResult, EntryPayload, PageResult
+from app.schemas import ActionResult, EntryPayload, PageResult, WorklistResult
 from app.services.proxy import ProxyService
+from app.store import store
 
 router = APIRouter(prefix="/api/proxy", tags=["采集代理路由"])
 
@@ -28,6 +29,44 @@ def list_entries(
         raise HTTPException(status_code=400, detail="每页最多 200 条，请缩小分页范围")
     items, total = service.list_entries(keyword=keyword, status=status, page=page, size=size)
     return PageResult(items=items, total=total, page=page, size=size)
+
+
+@router.get("/export")
+def export_entries() -> dict[str, Any]:
+    """导出采集代理路由清单：返回当前过滤条件下的全量数据。"""
+    items, total = service.list_entries(page=1, size=10000)
+    return {"module": "proxy", "total": total, "items": items}
+
+
+@router.get("/health-samples", response_model=WorklistResult)
+def health_samples(
+    region: str | None = Query(default=None, description="按区域标签过滤"),
+    page: int = 1,
+    size: int = 20,
+) -> WorklistResult:
+    """读取代理健康采样；没有采样时返回空态并说明原因，不伪造数据。"""
+    rows = store.aux_rows("proxy_health_samples")
+    if region:
+        rows = [row for row in rows if row.get("区域标签") == region]
+    rows = list(rows)
+    total = len(rows)
+    start = max(page - 1, 0) * size
+    items = rows[start:start + size]
+    if not items:
+        message = (
+            f"区域「{region}」暂无代理健康采样" if region else "暂无代理健康采样，等待采集节点上报"
+        )
+        return WorklistResult(items=[], total=0, page=page, size=size, state="empty", message=message)
+    below = sum(1 for row in items if str(row.get("采样结论") or "").startswith("低于阈值"))
+    return WorklistResult(
+        items=items,
+        total=total,
+        page=page,
+        size=size,
+        state="ok",
+        message="",
+        summary={"采样条数": total, "低于阈值": below},
+    )
 
 
 @router.get("/{entry_id}", response_model=dict)
@@ -56,10 +95,3 @@ def run_action(entry_id: int, payload: EntryPayload) -> ActionResult:
     if entry is None:
         return ActionResult(ok=False, message=message)
     return ActionResult(ok=True, message=message, entry=entry)
-
-
-@router.get("/export")
-def export_entries() -> dict[str, Any]:
-    """导出采集代理路由清单：返回当前过滤条件下的全量数据。"""
-    items, total = service.list_entries(page=1, size=10000)
-    return {"module": "proxy", "total": total, "items": items}
